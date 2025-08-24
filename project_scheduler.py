@@ -1,9 +1,12 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from typing import Dict, List
+from pydantic import BaseModel, Field
+
 from langchain_ollama import OllamaLLM
 from langchain.agents import initialize_agent
-from langchain.tools import tool
+from langchain.tools import StructuredTool
 
 # -------------------------------
 # Dummy Task Data
@@ -16,11 +19,9 @@ tasks = {
 }
 
 # -------------------------------
-# Tools (Agents� actions)
+# Tool 1: Build Schedule
 # -------------------------------
-@tool
-def build_schedule_tool(tasks: dict) -> dict:
-    """Builds project schedule based on dependencies."""
+def build_schedule(tasks: Dict) -> Dict:
     schedule = {}
     for t, data in tasks.items():
         start = 0
@@ -30,19 +31,44 @@ def build_schedule_tool(tasks: dict) -> dict:
         schedule[t] = {"name": data["name"], "start": start, "finish": finish}
     return schedule
 
-@tool
-def delay_task_tool(tasks: dict, task_id: str, delay: int) -> dict:
-    """Delays a task by X days and propagates changes."""
+build_schedule_tool = StructuredTool.from_function(
+    func=build_schedule,
+    name="BuildSchedule",
+    description="Build project schedule from tasks and dependencies",
+)
+
+# -------------------------------
+# Tool 2: Delay Task
+# -------------------------------
+class DelayInput(BaseModel):
+    task_id: str = Field(..., description="Task ID to delay, e.g. T2")
+    delay: int = Field(..., description="Number of days to delay")
+
+def delay_task(task_id: str, delay: int) -> Dict:
     tasks[task_id]["duration"] += delay
     return tasks
 
-@tool
-def optimize_tool(tasks: dict) -> dict:
-    """Naive optimization: reduce all non-root task durations by 1 day."""
+delay_task_tool = StructuredTool.from_function(
+    func=delay_task,
+    name="DelayTask",
+    description="Delay a given task by X days",
+    args_schema=DelayInput
+)
+
+# -------------------------------
+# Tool 3: Optimize Schedule
+# -------------------------------
+def optimize_schedule(tasks: Dict) -> Dict:
     for t, data in tasks.items():
         if data["dependencies"]:
             data["duration"] = max(1, data["duration"] - 1)
     return tasks
+
+optimize_tool = StructuredTool.from_function(
+    func=optimize_schedule,
+    name="OptimizeSchedule",
+    description="Optimize schedule by reducing downstream tasks"
+)
 
 # -------------------------------
 # Local LLM (Ollama)
@@ -57,17 +83,17 @@ optimizer = initialize_agent([optimize_tool], llm, agent_type="openai-functions"
 # Streamlit Dashboard
 # -------------------------------
 st.set_page_config(page_title="Agentic AI Project Scheduler", layout="wide")
-st.title("?? Agentic AI Project Scheduler with Gantt Chart")
+st.title("🤖 Agentic AI Project Scheduler with Gantt Chart")
 st.write("Built using **Streamlit + LangChain + Ollama + Plotly**")
 
-# Gantt Chart Helper
+# Helper: Gantt Chart
 def show_gantt(schedule):
     df = pd.DataFrame([
         {"Task": v["name"], "Start": v["start"], "Finish": v["finish"]}
         for v in schedule.values()
     ])
     fig = px.timeline(df, x_start="Start", x_end="Finish", y="Task", color="Task")
-    fig.update_yaxes(autorange="reversed")  # Gantt-style
+    fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
 # State
@@ -78,20 +104,20 @@ if "schedule" not in st.session_state:
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("?? Build Schedule"):
-        st.session_state.schedule = build_schedule_tool.invoke(tasks)
+    if st.button("📌 Build Schedule"):
+        st.session_state.schedule = build_schedule(tasks)
         show_gantt(st.session_state.schedule)
 
 with col2:
     task = st.selectbox("Select task to delay", list(tasks.keys()))
     delay = st.slider("Delay (days)", 1, 7, 2)
-    if st.button("?? Delay Task"):
-        updated = delay_task_tool.invoke(tasks, task_id=task, delay=delay)
-        st.session_state.schedule = build_schedule_tool.invoke(updated)
+    if st.button("⚠️ Delay Task"):
+        updated = delay_task(task_id=task, delay=delay)
+        st.session_state.schedule = build_schedule(updated)
         show_gantt(st.session_state.schedule)
 
 with col3:
-    if st.button("? Optimize"):
-        optimized = optimize_tool.invoke(tasks)
-        st.session_state.schedule = build_schedule_tool.invoke(optimized)
+    if st.button("✅ Optimize"):
+        optimized = optimize_schedule(tasks)
+        st.session_state.schedule = build_schedule(optimized)
         show_gantt(st.session_state.schedule)

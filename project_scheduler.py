@@ -16,7 +16,7 @@ tasks = {
 }
 
 # -------------------------------
-# Tools (Agents’ actions)
+# Tools (Agentsï¿½ actions)
 # -------------------------------
 @tool
 def build_schedule_tool(tasks: dict) -> dict:

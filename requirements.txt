@@ -1,5 +1,7 @@
 streamlit
-network
+langchain
+langchain-openai
+openai
 plotly
-
+networkx
     # Add any other required libraries here

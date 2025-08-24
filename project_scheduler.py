@@ -1,9 +1,12 @@
 import streamlit as st
-import networkx as nx
-import plotly.figure_factory as ff
+import pandas as pd
+import plotly.express as px
+from langchain_openai import ChatOpenAI
+from langchain.agents import initialize_agent
+from langchain.tools import tool
 
 # -------------------------------
-# 1. Define Project Plan
+# Demo Project Plan
 # -------------------------------
 tasks = {
     "T1": {"name": "Design", "duration": 5, "dependencies": []},
@@ -13,62 +16,90 @@ tasks = {
 }
 
 # -------------------------------
-# 2. Build Schedule
+# LangChain Tools
 # -------------------------------
-def build_schedule(tasks):
-    G = nx.DiGraph()
-    for t, data in tasks.items():
-        G.add_node(t, **data)
-    for t, data in tasks.items():
-        for dep in data["dependencies"]:
-            G.add_edge(dep, t)
-
+@tool
+def build_schedule_tool(tasks: dict) -> dict:
+    """Builds project schedule with dependencies."""
     schedule = {}
-    for t in nx.topological_sort(G):
+    for t, data in tasks.items():
         start = 0
-        for dep in tasks[t]["dependencies"]:
+        for dep in data["dependencies"]:
             start = max(start, schedule[dep]["finish"])
-        finish = start + tasks[t]["duration"]
-        schedule[t] = {
-            "id": t,
-            "name": tasks[t]["name"],
-            "start": start,
-            "finish": finish
-        }
+        finish = start + data["duration"]
+        schedule[t] = {"name": data["name"], "start": start, "finish": finish}
     return schedule
 
-# -------------------------------
-# 3. Convert to Gantt Data
-# -------------------------------
-def schedule_to_gantt(schedule):
-    data = []
-    for s in schedule.values():
-        data.append(dict(
-            Task=s["name"],
-            Start=f"2025-01-01 {s['start']:02}:00:00",
-            Finish=f"2025-01-01 {s['finish']:02}:00:00"
-        ))
-    return data
+@tool
+def detect_disruption_tool(tasks: dict, task_id: str, delay: int) -> str:
+    """Adds delay to a task and reports impact."""
+    tasks[task_id]["duration"] += delay
+    return f"?? Task {task_id} delayed by {delay} days"
+
+@tool
+def reallocate_resources_tool(tasks: dict, delayed_task: str) -> dict:
+    """Naive optimization: reduce duration of dependent tasks by 1 day."""
+    for t, data in tasks.items():
+        if delayed_task in data["dependencies"]:
+            data["duration"] = max(1, data["duration"] - 1)
+    return tasks
 
 # -------------------------------
-# 4. Streamlit UI
+# Agents
 # -------------------------------
-st.set_page_config(page_title="AI Project Scheduler", layout="wide")
-st.title("🤖 Agentic AI Project Scheduler & Optimizer")
+llm = ChatOpenAI(model="gpt-4o-mini")
 
-# Baseline
-baseline = build_schedule(tasks)
-st.subheader("📌 Baseline Schedule")
-fig1 = ff.create_gantt(schedule_to_gantt(baseline), index_col='Task', show_colorbar=True, group_tasks=True)
-st.plotly_chart(fig1, use_container_width=True)
+planner = initialize_agent([build_schedule_tool], llm, agent_type="openai-functions", verbose=True)
+monitor = initialize_agent([detect_disruption_tool], llm, agent_type="openai-functions", verbose=True)
+optimizer = initialize_agent([reallocate_resources_tool], llm, agent_type="openai-functions", verbose=True)
 
-# Disruption Simulation
-if st.button("⚠️ Simulate Delay in Procurement (T2)"):
-    tasks["T2"]["duration"] += 3  # inject delay
-    updated = build_schedule(tasks)
+# -------------------------------
+# Helpers for Gantt Chart
+# -------------------------------
+def make_gantt(schedule: dict, title="Project Schedule"):
+    """Convert schedule dict to Gantt chart"""
+    df = pd.DataFrame([
+        {"Task": data["name"], "Start": data["start"], "Finish": data["finish"]}
+        for _, data in schedule.items()
+    ])
+    fig = px.timeline(df, x_start="Start", x_end="Finish", y="Task", title=title, color="Task")
+    fig.update_yaxes(autorange="reversed")  # tasks from top to bottom
+    st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("🚧 Updated Schedule After Delay")
-    fig2 = ff.create_gantt(schedule_to_gantt(updated), index_col='Task', show_colorbar=True, group_tasks=True)
-    st.plotly_chart(fig2, use_container_width=True)
+# -------------------------------
+# Streamlit UI
+# -------------------------------
+st.title("?? Agentic AI for Project Scheduling")
+st.write("Multi-Agent Workflow: Planner ? Monitor ? Optimizer")
 
-    st.success(f"Task T2 delayed by 3 days. New project finish = Day {updated['T4']['finish']}")
+# Session state to persist changes
+if "schedule" not in st.session_state:
+    st.session_state.schedule = {}
+
+# 1. Build Baseline
+if st.button("?? Build Baseline Schedule"):
+    baseline = planner.run(f"Build schedule for tasks: {tasks}")
+    st.session_state.schedule = eval(baseline) if isinstance(baseline, str) else baseline
+    st.success("Baseline Schedule Generated ?")
+    st.json(st.session_state.schedule)
+    make_gantt(st.session_state.schedule, title="Baseline Schedule")
+
+# 2. Simulate Disruption
+task_to_delay = st.selectbox("Select task to delay", list(tasks.keys()))
+delay_days = st.slider("Delay in days", 1, 10, 3)
+
+if st.button("?? Simulate Disruption"):
+    alert = monitor.run(f"Delay task {task_to_delay} by {delay_days} days in tasks: {tasks}")
+    st.warning(alert)
+    baseline = planner.run(f"Recompute schedule for tasks: {tasks}")
+    st.session_state.schedule = eval(baseline) if isinstance(baseline, str) else baseline
+    st.json(st.session_state.schedule)
+    make_gantt(st.session_state.schedule, title="Schedule After Disruption")
+
+# 3. Optimize Schedule
+if st.button("? Optimize Schedule"):
+    optimized = optimizer.run(f"Optimize tasks after delay in {task_to_delay}: {tasks}")
+    st.session_state.schedule = eval(optimized) if isinstance(optimized, str) else optimized
+    st.success("Optimized Schedule ?")
+    st.json(st.session_state.schedule)
+    make_gantt(st.session_state.schedule, title="Optimized Schedule")

@@ -3,5 +3,6 @@ langchain
 langchain-openai
 openai
 plotly
+ollama
 networkx
     # Add any other required libraries here

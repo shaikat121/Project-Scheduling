@@ -1,8 +1,8 @@
 streamlit
 langchain
-langchain-openai
-openai
+langchain_ollama
 plotly
 ollama
 networkx
+
     # Add any other required libraries here

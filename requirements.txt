@@ -1,3 +1,4 @@
 streamlit
-networkx
+network
+plotly.figure_factory
     # Add any other required libraries here

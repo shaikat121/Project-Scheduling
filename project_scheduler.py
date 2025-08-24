@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from typing import Dict, List
+from typing import Dict
 from pydantic import BaseModel, Field
 
 from langchain_ollama import OllamaLLM
@@ -38,21 +38,24 @@ build_schedule_tool = StructuredTool.from_function(
 )
 
 # -------------------------------
-# Tool 2: Delay Task
+# Tool 2: Delay Task (Structured)
 # -------------------------------
 class DelayInput(BaseModel):
-    task_id: str = Field(..., description="Task ID to delay, e.g. T2")
+    task_id: str = Field(..., description="Task ID to delay, e.g. 'T2'")
     delay: int = Field(..., description="Number of days to delay")
 
-def delay_task(task_id: str, delay: int) -> Dict:
-    tasks[task_id]["duration"] += delay
+def delay_task(input_data: DelayInput) -> Dict:
+    """Delays a given task by X days."""
+    tid = input_data.task_id
+    d = input_data.delay
+    tasks[tid]["duration"] += d
     return tasks
 
 delay_task_tool = StructuredTool.from_function(
     func=delay_task,
     name="DelayTask",
-    description="Delay a given task by X days",
-    args_schema=DelayInput
+    description="Delay a given task by X days. Inputs: task_id (str), delay (int).",
+    args_schema=DelayInput,
 )
 
 # -------------------------------
@@ -67,7 +70,7 @@ def optimize_schedule(tasks: Dict) -> Dict:
 optimize_tool = StructuredTool.from_function(
     func=optimize_schedule,
     name="OptimizeSchedule",
-    description="Optimize schedule by reducing downstream tasks"
+    description="Optimize schedule by reducing downstream tasks",
 )
 
 # -------------------------------
@@ -75,9 +78,12 @@ optimize_tool = StructuredTool.from_function(
 # -------------------------------
 llm = OllamaLLM(model="llama3")
 
-planner = initialize_agent([build_schedule_tool], llm, agent_type="openai-functions", verbose=True)
-monitor = initialize_agent([delay_task_tool], llm, agent_type="openai-functions", verbose=True)
-optimizer = initialize_agent([optimize_tool], llm, agent_type="openai-functions", verbose=True)
+agent = initialize_agent(
+    tools=[build_schedule_tool, delay_task_tool, optimize_tool],
+    llm=llm,
+    agent_type="openai-functions",
+    verbose=True,
+)
 
 # -------------------------------
 # Streamlit Dashboard
@@ -96,11 +102,13 @@ def show_gantt(schedule):
     fig.update_yaxes(autorange="reversed")
     st.plotly_chart(fig, use_container_width=True)
 
-# State
+# Session State
 if "schedule" not in st.session_state:
     st.session_state.schedule = {}
 
-# Actions
+# -------------------------------
+# Actions via Buttons
+# -------------------------------
 col1, col2, col3 = st.columns(3)
 
 with col1:
@@ -112,7 +120,7 @@ with col2:
     task = st.selectbox("Select task to delay", list(tasks.keys()))
     delay = st.slider("Delay (days)", 1, 7, 2)
     if st.button("⚠️ Delay Task"):
-        updated = delay_task(task_id=task, delay=delay)
+        updated = delay_task(DelayInput(task_id=task, delay=delay))
         st.session_state.schedule = build_schedule(updated)
         show_gantt(st.session_state.schedule)
 
@@ -120,4 +128,17 @@ with col3:
     if st.button("✅ Optimize"):
         optimized = optimize_schedule(tasks)
         st.session_state.schedule = build_schedule(optimized)
+        show_gantt(st.session_state.schedule)
+
+# -------------------------------
+# Natural Language Agent Input
+# -------------------------------
+st.subheader("💬 Natural Language Agent")
+user_query = st.text_input("Ask me (e.g. 'Delay Procurement by 3 days and optimize'):")
+
+if st.button("Run Agent"):
+    if user_query:
+        response = agent.run(user_query)
+        st.write("🧠 Agent Response:", response)
+        st.session_state.schedule = build_schedule(tasks)
         show_gantt(st.session_state.schedule)

@@ -5,5 +5,6 @@ plotly
 ollama
 pydantic
 typing
+matplotlib
 networkx
     # Add any other required libraries here

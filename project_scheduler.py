@@ -5,7 +5,7 @@ from typing import Dict
 from pydantic import BaseModel, Field
 
 from langchain_ollama import OllamaLLM
-from langchain.agents import initialize_agent
+from langchain.agents import initialize_agent, AgentType
 from langchain.tools import StructuredTool
 
 # -------------------------------
@@ -51,10 +51,10 @@ def delay_task(input_data: DelayInput) -> Dict:
     tasks[tid]["duration"] += d
     return tasks
 
-delay_task_tool = StructuredTool.from_function(
-    func=delay_task,
+delay_task_tool = StructuredTool(
     name="DelayTask",
     description="Delay a given task by X days. Inputs: task_id (str), delay (int).",
+    func=delay_task,
     args_schema=DelayInput,
 )
 
@@ -81,7 +81,7 @@ llm = OllamaLLM(model="llama3")
 agent = initialize_agent(
     tools=[build_schedule_tool, delay_task_tool, optimize_tool],
     llm=llm,
-    agent_type="openai-functions",
+    agent_type=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,  # ✅ FIXED
     verbose=True,
 )
 

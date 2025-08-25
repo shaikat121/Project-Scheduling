@@ -7,5 +7,6 @@ pydantic
 typing
 matplotlib
 os
+langchain_huggingface
 networkx
     # Add any other required libraries here

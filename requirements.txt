@@ -2,6 +2,9 @@ streamlit
 langchain
 langchain_ollama
 langchain_community
+langchain-community
+transformers
+torch
 langchainhub
 huggingface_hub 
 langchain_huggingface
@@ -15,4 +18,5 @@ os
 networkx
 
     # Add any other required libraries here
+
 

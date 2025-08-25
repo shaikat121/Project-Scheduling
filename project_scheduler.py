@@ -81,7 +81,7 @@ llm = OllamaLLM(model="llama3")
 agent = initialize_agent(
     tools=[build_schedule_tool, delay_task_tool, optimize_tool],
     llm=llm,
-    agent_type=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,  # ✅ FIXED
+    agent_type=AgentType.OPENAI_FUNCTIONS, # ✅ FIXED
     verbose=True,
 )
 

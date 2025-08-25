@@ -1,8 +1,9 @@
 import streamlit as st
-from langchain_ollama import OllamaLLM
+from langchain_huggingface import HuggingFaceEndpoint
 from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
 import matplotlib.pyplot as plt
+import os
 
 # -----------------------
 # Example Task Dictionary
@@ -15,7 +16,7 @@ tasks = {
 }
 
 # -----------------------
-# Tool 1: Build Schedule
+# Tools
 # -----------------------
 def build_schedule(_):
     return tasks
@@ -26,13 +27,7 @@ build_schedule_tool = Tool(
     func=lambda _: build_schedule(None),
 )
 
-# -----------------------
-# Tool 2: Delay Task (flattened input)
-# -----------------------
 def delay_task_str(query: str):
-    """
-    Delay a task by providing input like 'T2,3' meaning delay T2 by 3 days.
-    """
     try:
         tid, d = query.split(",")
         tid = tid.strip()
@@ -48,12 +43,9 @@ delay_task_tool = Tool(
     func=delay_task_str,
 )
 
-# -----------------------
-# Tool 3: Optimize Schedule (naive)
-# -----------------------
 def optimize_schedule(_):
     for t in tasks.values():
-        t["duration"] = max(1, t["duration"] - 1)  # shave off 1 day, min 1
+        t["duration"] = max(1, t["duration"] - 1)
     return tasks
 
 optimize_tool = Tool(
@@ -63,14 +55,22 @@ optimize_tool = Tool(
 )
 
 # -----------------------
+# HuggingFace LLM (FREE)
+# -----------------------
+# 👉 Get a free key from https://huggingface.co/settings/tokens
+# Example: os.environ["HUGGINGFACEHUB_API_TOKEN"] = "hf_xxxxx"
+llm = HuggingFaceEndpoint(
+    repo_id="mistralai/Mistral-7B-Instruct-v0.2",  # free instruct model
+    huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
+)
+
+# -----------------------
 # LangChain Agent
 # -----------------------
-llm = OllamaLLM(model="llama3")
-
 agent = initialize_agent(
     tools=[build_schedule_tool, delay_task_tool, optimize_tool],
     llm=llm,
-    agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,  # ✅ works with string input tools
+    agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
     verbose=True,
 )
 

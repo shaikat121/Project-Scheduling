@@ -1,5 +1,5 @@
 import streamlit as st
-from langchain_huggingface import HuggingFaceEndpoint
+from langchain_community.llms import HuggingFaceEndpoint
 from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
 import matplotlib.pyplot as plt
@@ -58,7 +58,6 @@ optimize_tool = Tool(
 # HuggingFace LLM (FREE)
 # -----------------------
 # 👉 Get a free key from https://huggingface.co/settings/tokens
-# Example: os.environ["HUGGINGFACEHUB_API_TOKEN"] = "hf_xxxxx"
 llm = HuggingFaceEndpoint(
     repo_id="mistralai/Mistral-7B-Instruct-v0.2",  # free instruct model
     huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),

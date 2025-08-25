@@ -1,9 +1,9 @@
 import streamlit as st
-from langchain_community.llms import HuggingFaceEndpoint
+from langchain_community.llms import HuggingFacePipeline
 from langchain.agents import initialize_agent, AgentType
 from langchain.tools import Tool
 import matplotlib.pyplot as plt
-import os
+from transformers import pipeline
 
 # -----------------------
 # Example Task Dictionary
@@ -55,13 +55,10 @@ optimize_tool = Tool(
 )
 
 # -----------------------
-# HuggingFace LLM (FREE)
+# Local HuggingFace LLM
 # -----------------------
-# 👉 Get a free key from https://huggingface.co/settings/tokens
-llm = HuggingFaceEndpoint(
-    repo_id="mistralai/Mistral-7B-Instruct-v0.2",  # free instruct model
-    huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN"),
-)
+pipe = pipeline("text-generation", model="distilbert-base-uncased", max_new_tokens=50)
+llm = HuggingFacePipeline(pipeline=pipe)
 
 # -----------------------
 # LangChain Agent
@@ -76,7 +73,7 @@ agent = initialize_agent(
 # -----------------------
 # Streamlit UI
 # -----------------------
-st.title("📊 Agentic AI Project Scheduler")
+st.title("📊 Agentic AI Project Scheduler (Offline Mode)")
 
 query = st.text_input("Ask me (e.g., 'Build schedule', 'Delay T2 by 3 days', 'Optimize schedule'):")
 

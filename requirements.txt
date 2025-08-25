@@ -1,13 +1,6 @@
 streamlit
-langchain
-langchain_ollama
+pandas
 plotly
-ollama
-pydantic
-typing
-matplotlib
-os
-langchain_huggingface
-ortools
+numpy
 networkx
     # Add any other required libraries here

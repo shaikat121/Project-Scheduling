@@ -1,144 +1,105 @@
 import streamlit as st
-import pandas as pd
-import plotly.express as px
-from typing import Dict
-from pydantic import BaseModel, Field
-
 from langchain_ollama import OllamaLLM
 from langchain.agents import initialize_agent, AgentType
-from langchain.tools import StructuredTool
+from langchain.tools import Tool
+import matplotlib.pyplot as plt
 
-# -------------------------------
-# Dummy Task Data
-# -------------------------------
+# -----------------------
+# Example Task Dictionary
+# -----------------------
 tasks = {
     "T1": {"name": "Design", "duration": 5, "dependencies": []},
     "T2": {"name": "Procurement", "duration": 7, "dependencies": ["T1"]},
-    "T3": {"name": "Assembly", "duration": 10, "dependencies": ["T2"]},
-    "T4": {"name": "Testing", "duration": 6, "dependencies": ["T3"]},
+    "T3": {"name": "Implementation", "duration": 10, "dependencies": ["T2"]},
+    "T4": {"name": "Testing", "duration": 4, "dependencies": ["T3"]},
 }
 
-# -------------------------------
+# -----------------------
 # Tool 1: Build Schedule
-# -------------------------------
-def build_schedule(tasks: Dict) -> Dict:
-    schedule = {}
-    for t, data in tasks.items():
-        start = 0
-        for dep in data["dependencies"]:
-            start = max(start, schedule[dep]["finish"])
-        finish = start + data["duration"]
-        schedule[t] = {"name": data["name"], "start": start, "finish": finish}
-    return schedule
+# -----------------------
+def build_schedule(_):
+    return tasks
 
-build_schedule_tool = StructuredTool.from_function(
-    func=build_schedule,
+build_schedule_tool = Tool(
     name="BuildSchedule",
-    description="Build project schedule from tasks and dependencies",
+    description="Builds a project schedule and returns tasks with durations and dependencies.",
+    func=lambda _: build_schedule(None),
 )
 
-# -------------------------------
-# Tool 2: Delay Task (Structured)
-# -------------------------------
-class DelayInput(BaseModel):
-    task_id: str = Field(..., description="Task ID to delay, e.g. 'T2'")
-    delay: int = Field(..., description="Number of days to delay")
+# -----------------------
+# Tool 2: Delay Task (flattened input)
+# -----------------------
+def delay_task_str(query: str):
+    """
+    Delay a task by providing input like 'T2,3' meaning delay T2 by 3 days.
+    """
+    try:
+        tid, d = query.split(",")
+        tid = tid.strip()
+        d = int(d.strip())
+        tasks[tid]["duration"] += d
+        return f"Task {tid} delayed by {d} days. Updated duration: {tasks[tid]['duration']}"
+    except Exception as e:
+        return f"Error: {str(e)}. Use format 'T2,3'."
 
-def delay_task(input_data: DelayInput) -> Dict:
-    """Delays a given task by X days."""
-    tid = input_data.task_id
-    d = input_data.delay
-    tasks[tid]["duration"] += d
-    return tasks
-
-delay_task_tool = StructuredTool(
+delay_task_tool = Tool(
     name="DelayTask",
-    description="Delay a given task by X days. Inputs: task_id (str), delay (int).",
-    func=delay_task,
-    args_schema=DelayInput,
+    description="Delay a task by providing 'task_id,days' (e.g. 'T2,3').",
+    func=delay_task_str,
 )
 
-# -------------------------------
-# Tool 3: Optimize Schedule
-# -------------------------------
-def optimize_schedule(tasks: Dict) -> Dict:
-    for t, data in tasks.items():
-        if data["dependencies"]:
-            data["duration"] = max(1, data["duration"] - 1)
+# -----------------------
+# Tool 3: Optimize Schedule (naive)
+# -----------------------
+def optimize_schedule(_):
+    for t in tasks.values():
+        t["duration"] = max(1, t["duration"] - 1)  # shave off 1 day, min 1
     return tasks
 
-optimize_tool = StructuredTool.from_function(
-    func=optimize_schedule,
+optimize_tool = Tool(
     name="OptimizeSchedule",
-    description="Optimize schedule by reducing downstream tasks",
+    description="Optimize schedule by reducing duration of each task (simulation).",
+    func=lambda _: optimize_schedule(None),
 )
 
-# -------------------------------
-# Local LLM (Ollama)
-# -------------------------------
+# -----------------------
+# LangChain Agent
+# -----------------------
 llm = OllamaLLM(model="llama3")
 
 agent = initialize_agent(
     tools=[build_schedule_tool, delay_task_tool, optimize_tool],
     llm=llm,
-    agent_type=AgentType.OPENAI_FUNCTIONS,   # ✅ FIXED to support multi-input tools
+    agent_type=AgentType.ZERO_SHOT_REACT_DESCRIPTION,  # ✅ works with string input tools
     verbose=True,
 )
 
-# -------------------------------
-# Streamlit Dashboard
-# -------------------------------
-st.set_page_config(page_title="Agentic AI Project Scheduler", layout="wide")
-st.title("🤖 Agentic AI Project Scheduler with Gantt Chart")
-st.write("Built using **Streamlit + LangChain + Ollama + Plotly**")
+# -----------------------
+# Streamlit UI
+# -----------------------
+st.title("📊 Agentic AI Project Scheduler")
 
-# Helper: Gantt Chart
-def show_gantt(schedule):
-    df = pd.DataFrame([
-        {"Task": v["name"], "Start": v["start"], "Finish": v["finish"]}
-        for v in schedule.values()
-    ])
-    fig = px.timeline(df, x_start="Start", x_end="Finish", y="Task", color="Task")
-    fig.update_yaxes(autorange="reversed")
-    st.plotly_chart(fig, use_container_width=True)
-
-# Session State
-if "schedule" not in st.session_state:
-    st.session_state.schedule = {}
-
-# -------------------------------
-# Actions via Buttons
-# -------------------------------
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    if st.button("📌 Build Schedule"):
-        st.session_state.schedule = build_schedule(tasks)
-        show_gantt(st.session_state.schedule)
-
-with col2:
-    task = st.selectbox("Select task to delay", list(tasks.keys()))
-    delay = st.slider("Delay (days)", 1, 7, 2)
-    if st.button("⚠️ Delay Task"):
-        updated = delay_task(DelayInput(task_id=task, delay=delay))
-        st.session_state.schedule = build_schedule(updated)
-        show_gantt(st.session_state.schedule)
-
-with col3:
-    if st.button("✅ Optimize"):
-        optimized = optimize_schedule(tasks)
-        st.session_state.schedule = build_schedule(optimized)
-        show_gantt(st.session_state.schedule)
-
-# -------------------------------
-# Natural Language Agent Input
-# -------------------------------
-st.subheader("💬 Natural Language Agent")
-user_query = st.text_input("Ask me (e.g. 'Delay Procurement by 3 days and optimize'):")
+query = st.text_input("Ask me (e.g., 'Build schedule', 'Delay T2 by 3 days', 'Optimize schedule'):")
 
 if st.button("Run Agent"):
-    if user_query:
-        response = agent.run(user_query)
-        st.write("🧠 Agent Response:", response)
-        st.session_state.schedule = build_schedule(tasks)
-        show_gantt(st.session_state.schedule)
+    if query:
+        response = agent.run(query)
+        st.write("### 🤖 Agent Response")
+        st.write(response)
+
+        # Draw Gantt chart
+        fig, ax = plt.subplots()
+        yticks, labels = [], []
+        start = 0
+        for i, (tid, t) in enumerate(tasks.items()):
+            ax.barh(i, t["duration"], left=start)
+            yticks.append(i)
+            labels.append(tid + " - " + t["name"])
+            start += t["duration"]
+        ax.set_yticks(yticks)
+        ax.set_yticklabels(labels)
+        ax.set_xlabel("Days")
+        ax.set_title("Gantt Chart (Simulated)")
+        st.pyplot(fig)
+    else:
+        st.warning("Please enter a query.")
